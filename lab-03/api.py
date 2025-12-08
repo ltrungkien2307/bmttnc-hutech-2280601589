@@ -1,104 +1,34 @@
-import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QMessageBox
-from ui.rsa import Ui_MainWindow
-import requests
+from flask import Flask, request, jsonify
+from cipher.ecc.ecc_cipher import ECCCipher
 
 
-class MyApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.ui = Ui_MainWindow()
-        self.ui.setupUi(self)
-        self.ui.btn_gen_keys.clicked.connect(self.call_api_gen_keys)
-        self.ui.btn_encrypt.clicked.connect(self.call_api_encrypt)
-        self.ui.btn_decrypt.clicked.connect(self.call_api_decrypt)
-        self.ui.btn_sign.clicked.connect(self.call_api_sign)
-        self.ui.btn_verify.clicked.connect(self.call_api_verify)
+app = Flask(__name__)
+ecc_cipher = ECCCipher()
 
-    def call_api_gen_keys(self):
-        url = "http://127.0.0.1:5000/api/rsa/generate_keys"
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                data = response.json()
-                QMessageBox.information(self, "Success", data["message"])
-            else:
-                print("Error while calling API")
-        except Exception as e:
-            print("Error:", e)
+@app.route('/api/ecc/generate_keys', methods=['GET'])
+def ecc_generate_keys():
+    ecc_cipher.generate_keys()
+    return jsonify({'message': 'Keys generated successfully'})
 
-    def call_api_encrypt(self):
-        url = "http://127.0.0.1:5000/api/rsa/encrypt"
-        payload = {
-            "message": self.ui.txt_plain_text.toPlainText(),
-            "key_type": "public"
-        }
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                self.ui.txt_cipher_text.setPlainText(data["encrypted_message"])
-                QMessageBox.information(self, "Success", "Encrypted Successfully")
-            else:
-                print("Error while calling API")
-        except Exception as e:
-            print("Error:", e)
+@app.route('/api/ecc/sign', methods=['POST'])
+def ecc_sign_message():
+    data = request.json
+    message = data['message']
+    private_key, _ = ecc_cipher.load_keys()
+    signature = ecc_cipher.sign(message, private_key)
+    signature_hex = signature.hex()
+    return jsonify({'signature': signature_hex})
 
-    def call_api_decrypt(self):
-        url = "http://127.0.0.1:5000/api/rsa/decrypt"
-        payload = {
-            "ciphertext": self.ui.txt_cipher_text.toPlainText(),
-            "key_type": "private"
-        }
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                self.ui.txt_plain_text.setPlainText(data["decrypted_message"])
-                QMessageBox.information(self, "Success", "Decrypted Successfully")
-            else:
-                print("Error while calling API")
-        except Exception as e:
-            print("Error:", e)
-
-    def call_api_sign(self):
-        url = "http://127.0.0.1:5000/api/rsa/sign"
-        payload = {
-            "message": self.ui.txt_info.toPlainText(),
-        }
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                self.ui.txt_sign.setPlainText(data["signature"])
-                QMessageBox.information(self, "Success", "Signed Successfully")
-            else:
-                print("Error while calling API")
-        except Exception as e:
-            print("Error:", e)
-
-    def call_api_verify(self):
-        url = "http://127.0.0.1:5000/api/rsa/verify"
-        payload = {
-            "message": self.ui.txt_info.toPlainText(),
-            "signature": self.ui.txt_sign.toPlainText()
-        }
-        try:
-            response = requests.post(url, json=payload)
-            if response.status_code == 200:
-                data = response.json()
-                if data["is_verified"]:
-                    QMessageBox.information(self, "Success", "Verified Successfully")
-                else:
-                    QMessageBox.warning(self, "Fail", "Verify Failed")
-            else:
-                print("Error while calling API")
-        except Exception as e:
-            print("Error:", e)
+@app.route('/api/ecc/verify', methods=['POST'])
+def ecc_verify_signature():
+    data = request.json
+    message = data['message']
+    signature_hex = data['signature']
+    public_key, _ = ecc_cipher.load_keys()
+    signature = bytes.fromhex(signature_hex)
+    is_verified = ecc_cipher.verify(message, signature, public_key)
+    return jsonify({'is_verified': is_verified})
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MyApp()
-    window.show()
-    sys.exit(app.exec_())
+    app.run(host='0.0.0.0', port=5000, debug=True)
